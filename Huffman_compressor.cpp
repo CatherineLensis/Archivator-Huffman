@@ -6,6 +6,7 @@
 #include<map>
 #include <vector>
 #include <locale>
+#include "hf.h"
 using namespace std;
 
 struct Node
@@ -25,16 +26,17 @@ int Compressor()//в компрессоре включить вызов с ко�
 		cerr << "Ошибка открытия файла для чтения" << endl;
 		return -1;
 	}
-
+	std::vector<char> bytes;
 	while (f) {
 		unsigned char ch;
 		f.read(reinterpret_cast<char*>(&ch), sizeof(ch));
+		bytes.push_back(ch);
 		if (f.gcount() > 0) {
 			++weight[ch];
 		}
 	}
 	f.close();
-	/*for (auto& i : weight)
+	for (auto& i : weight)
 		i = 0;
 	{
 		ifstream f("Alices Adventures in Wonderland.txt");
@@ -45,12 +47,8 @@ int Compressor()//в компрессоре включить вызов с ко�
 			++weight[ch];
 		}
 	}
-	*/
+	multimap <int/*вес*/, int/*индекс*/> sortedWeight;
 	// нужно отсортировать веса, можем положить в map, в первый положим вес, во второй символ
-
-	/*for (int i = 0; i < 0x100; i++)
-	{
-	}
 	// распечатаем данные из карты
 	for (auto i : sortedWeight)
 	{
@@ -59,8 +57,6 @@ int Compressor()//в компрессоре включить вызов с ко�
 			cout << i.first << " " << i.second<< endl;
 		}
 	}
-	*/
-	multimap <int/*вес*/, int/*индекс*/> sortedWeight;
 	vector<Node> tree;
 	map<char, int> charMap;
 	for (size_t i = 0; i < 0x100; i++)
@@ -75,6 +71,7 @@ int Compressor()//в компрессоре включить вызов с ко�
 			sortedWeight.insert(make_pair(weight[i], tree.size() - 1));
 		}
 	}
+	
 	//будем вытаскивать ноды из сортид, отсортированные веса
 		//  и пока будет больше,
 		//  чем 1 элемент будем идти по циклу
@@ -87,7 +84,7 @@ int Compressor()//в компрессоре включить вызов с ко�
 		int w1 = begin(sortedWeight)->first;
 		int n1 = begin(sortedWeight)->second;
 		sortedWeight.erase(begin(sortedWeight));
-		tree.push_back(Node{ '\0',-1,n0,n1,false });
+		tree.push_back(Node{ '\0',-1,n0,n1,false});
 		tree[n0].parent = tree.size() - 1;
 		tree[n0].branch = false;
 		tree[n1].parent = tree.size() - 1;
@@ -95,23 +92,32 @@ int Compressor()//в компрессоре включить вызов с ко�
 		//суммы весов детей, потом индекс
 		sortedWeight.insert(make_pair(w0 + w1, tree.size() - 1));
 	}
+	// Проверка содержимого дерева
+	/*for (const auto& node : tree) {
+		cout << "Node: " << node.ch << " Parent: " << node.parent << endl;
+	}
+	*/
+	// Проверка содержимого sortedWeight
+	if (sortedWeight.empty()) {
+		cout << "sortedWeight пуст" << endl;
+	}
+	else {
+		cout << "sortedWeight содержит элементы" << endl;
+	}
+
 	vector<bool> data;
 	f.open("Alices Adventures in Wonderland.txt", ios::binary);
 	if (!f) {
 		cerr << "Ошибка открытия файла для чтения" << endl;
 		return -1;
 	}
-	//ifstream f("Alices Adventures in Wonderland.txt");
 	while (f)
 	{
 		unsigned char ch;
-		//f.read((char*)&ch, sizeof(ch));
 		f.read(reinterpret_cast<char*>(&ch), sizeof(ch));
 		if (f.gcount() > 0) {
 			auto n = tree[charMap[ch]];
 			vector<bool> compressedChar;
-			//auto n = tree[charMap[ch]];
-			//vector<bool> compressedChar;
 			while (n.parent != -1)//у всех есть родитель кроме верхнего
 			{
 				compressedChar.push_back(n.branch);
@@ -126,43 +132,78 @@ int Compressor()//в компрессоре включить вызов с ко�
 		cerr << "Ошибка создания выходного файла" << endl;
 		return -1;
 	}
-	//ofstream f("Huffmantext.huff");
 	int treeSize = tree.size();
-	//f.write((char*)&treeSize, sizeof(treeSize));
 	outFile.write(reinterpret_cast<char*>(&treeSize), sizeof(treeSize));
 	for (auto& node : tree) //(auto i : tree)
 	{
-		//f.write((char*)&i, sizeof(i));
 		outFile.write(reinterpret_cast<char*>(&node), sizeof(node));
 	}
-	for (size_t i = 0; i <= data.size() / 8; i++)
-	{
+	for (size_t i = 0; i < data.size(); i += 8) {
 		unsigned char ch = 0;
-		for (int j = 0; j < 8; j++)
-		{
-			if (data[i * 8 + j])
-			{
-				ch|= (1 << j);
+		for (int j = 0; j < 8 && (i + j) < data.size(); j++) {
+			if (data[i + j]) {
+				ch |= (1 << j);
 			}
 		}
-		//f.write((char*)&ch, sizeof(ch));
 		outFile.write(reinterpret_cast<char*>(&ch), sizeof(ch));
 	}
 	outFile.close();
+	
 	cout << "Архивация файла выполнена" << endl;
-	return 1;
+	// Оценка вероятностей
+	unordered_map<char, float> proba = estimate_proba(bytes);
+
+	// Построение кодовой таблицы Хаффмана
+	unordered_map<char, vector<bool>> codes_table = build_code(proba);
+
+	// Кодирование данных
+	vector<bool> encoded_bytes = encode(bytes, codes_table);
+
 	// for (int i = 0; i < 0x100; i++)
 	 //{
 	  //   if (weight[i] > 0)
 	  //       cout << weight[i] << " " << (char)i<<endl; //вывели распределение
 
+	cout << "\nпрактический коэффициент сжатия: " << estimate_compression(bytes.size(), encoded_bytes.size() + codes_table.size()) << endl;
 
-	 // }
+	//проверка оптимальности кода
+	if (is_optimal(codes_table, proba)) cout << "\nКод является оптимальным." << endl;
+	else cout << "\nКод НЕ является оптимальным." << endl;
+	//проверка префиксности кода
+	if (is_prefix(codes_table)) cout << "\nКод является префиксным." << endl;
+	else cout << "\nКод НЕ является префиксным." << endl;
+	// Запись кодовой таблицы в бинарный файл
+	ofstream table_file("table.bin", ios::binary);
+	for (const auto& pair : codes_table) {
+		table_file.put(pair.first);
+		size_t size = pair.second.size();
+		table_file.write(reinterpret_cast<const char*>(&size), sizeof(size));
+		for (bool bit : pair.second) {
+			table_file.put(bit);
+		}
+	}
+	table_file.close();
+
+	// Запись закодированных данных в бинарный файл
+	ofstream code_file("code.bin", ios::binary);
+	for (size_t i = 0; i < encoded_bytes.size(); i += 8) {
+		char byte = 0;
+		for (size_t j = 0; j < 8 && i + j < encoded_bytes.size(); ++j) {
+			byte |= (encoded_bytes[i + j] << (7 - j));
+		}
+		code_file.put(byte);
+	}
+	code_file.close();
+
+	// Сообщение о записи файлов
+	cout << "\nКодовая таблица и закодированные данные записаны в бинарные файлы table.bin и code.bin." << endl;
+
+	return 1;
+
 }
 int Decompressor()
 {
 	//общение с пользователем
-
 	vector<Node> tree;
 	ifstream f("Huffmantext.huff", ios::binary);
 	if (!f) {
@@ -239,12 +280,23 @@ int Decompressor()
 		cerr << "Ошибка при закрытии выходного файла output.txt" << endl;
 		return -1;
 	}
+
+	// Оценка теоретического коэффициента сжатия
+	ifstream originalFile("Alices Adventures in Wonderland.txt", ios::binary);
+	if (!originalFile) {
+		cerr << "Ошибка открытия исходного файла для оценки сжатия" << endl;
+		return -1;
+	}
+	vector<char> originalBytes((istreambuf_iterator<char>(originalFile)), istreambuf_iterator<char>());
+	originalFile.close();
+
+	unordered_map<char, float> proba = estimate_proba(originalBytes);
+	unordered_map<char, vector<bool>> table = build_code(proba);
+	float theoretical_compression = estimate_compression(table, proba);
+	cout << "\nТеоретический коэффициент сжатия: " << theoretical_compression << endl;
 	cout << "\nРазархивация файла выполнена" << endl;
 	return 1;
 }
-
-
-
 int main()
 {
 	setlocale(LC_ALL, "Russian");
