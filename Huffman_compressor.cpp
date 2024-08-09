@@ -11,14 +11,14 @@ using namespace std;
 
 struct Node
 {
-	char ch;
-	int parent;
-	int zero;
-	int one;
-	bool branch;// к какой ветке относится нод
+	char ch;//символ
+	int parent;//индекс родителя
+	int zero;//индекс левого потомка
+	int one;//индекс правого потомка
+	bool branch;//принадлежность ветки
 };
 
-int Compressor()//в компрессоре включить вызов с консоли 1-заархивировать 2- разархивировать
+int Compressor()
 {
 	int weight[0x100] = { 0 };
 	ifstream f("Alices Adventures in Wonderland.txt", ios::binary);
@@ -26,6 +26,7 @@ int Compressor()//в компрессоре включить вызов с ко�
 		cerr << "Ошибка открытия файла для чтения" << endl;
 		return -1;
 	}
+	//Каждый символ считывается и добавляется в вектор bytes. Также обновляется массив weight для подсчета частоты каждого символа.
 	std::vector<char> bytes;
 	while (f) {
 		unsigned char ch;
@@ -36,10 +37,11 @@ int Compressor()//в компрессоре включить вызов с ко�
 		}
 	}
 	f.close();
+	//Массив weight заполняется частотами появления каждого символа в файле.
 	for (auto& i : weight)
 		i = 0;
 	{
-		ifstream f("Alices Adventures in Wonderland.txt");
+		ifstream f("Alices Adventures in Wonderland.txt", ios::binary);
 		while (!f.eof())
 		{
 			unsigned char ch;
@@ -47,9 +49,8 @@ int Compressor()//в компрессоре включить вызов с ко�
 			++weight[ch];
 		}
 	}
+	//Далее создается multimap для сортировки символов по их частотам.
 	multimap <int/*вес*/, int/*индекс*/> sortedWeight;
-	// нужно отсортировать веса, можем положить в map, в первый положим вес, во второй символ
-	// распечатаем данные из карты
 	for (auto i : sortedWeight)
 	{
 		if (i.first > 0)
@@ -59,6 +60,10 @@ int Compressor()//в компрессоре включить вызов с ко�
 	}
 	vector<Node> tree;
 	map<char, int> charMap;
+	//Каждый символ с ненулевой частотой добавляется в вектор tree как узел дерева.
+	//Вектор tree содержит структуру Node, представляющую узел дерева Хаффмана.
+	//Узлы дерева сортируются по частотам в multimap sortedWeight.
+	//Узлы с наименьшими частотами объединяются для создания новых узлов до тех пор, пока не останется один узел, представляющий корень дерева.
 	for (size_t i = 0; i < 0x100; i++)
 	{
 		if (weight[i] > 0)
@@ -71,10 +76,12 @@ int Compressor()//в компрессоре включить вызов с ко�
 			sortedWeight.insert(make_pair(weight[i], tree.size() - 1));
 		}
 	}
+
 	
 	//будем вытаскивать ноды из сортид, отсортированные веса
 		//  и пока будет больше,
 		//  чем 1 элемент будем идти по циклу
+
 	while (sortedWeight.size() > 1)
 	{
 		//вытащим самый первый элемент из отсортированных весов
@@ -112,6 +119,8 @@ int Compressor()//в компрессоре включить вызов с ко�
 		return -1;
 	}
 	while (f)
+		//Проход по файлу снова, чтобы преобразовать каждый символ в последовательность бит на основе построенного дерева.
+		//Биты для каждого символа добавляются в вектор data.
 	{
 		unsigned char ch;
 		f.read(reinterpret_cast<char*>(&ch), sizeof(ch));
@@ -126,6 +135,7 @@ int Compressor()//в компрессоре включить вызов с ко�
 			data.insert(end(data), compressedChar.rbegin(), compressedChar.rend());
 		}
 	}
+
 	f.close();
 	ofstream outFile("Huffmantext.huff", ios::binary);
 	if (!outFile) {
@@ -148,7 +158,11 @@ int Compressor()//в компрессоре включить вызов с ко�
 		outFile.write(reinterpret_cast<char*>(&ch), sizeof(ch));
 	}
 	outFile.close();
-	
+	//Оценка вероятностей символов в файле с помощью функции estimate_proba.
+	// Построение кодовой таблицы с помощью функции build_code.
+	// Кодирование данных с помощью функции encode.
+	// Расчет и вывод практического коэффициента сжатия.
+	// Проверка оптимальности кода и его префиксности.
 	cout << "Архивация файла выполнена" << endl;
 	// Оценка вероятностей
 	unordered_map<char, float> proba = estimate_proba(bytes);
@@ -159,12 +173,23 @@ int Compressor()//в компрессоре включить вызов с ко�
 	// Кодирование данных
 	vector<bool> encoded_bytes = encode(bytes, codes_table);
 
+	float theoretical_compression = estimate_compression(codes_table, proba);
+	cout << "\nТеоретический коэффициент сжатия: " << theoretical_compression << endl;
+
+	cout << "\nПрактический коэффициент сжатия: ";
+
+	size_t encoded_size_in_bytes = (encoded_bytes.size() + 7) / 8; // округление вверх до ближайшего байта
+	size_t total_compressed_size = encoded_size_in_bytes + codes_table.size();
+
+	cout << estimate_compression(bytes.size(), total_compressed_size) << endl;
+
+
 	// for (int i = 0; i < 0x100; i++)
 	 //{
 	  //   if (weight[i] > 0)
 	  //       cout << weight[i] << " " << (char)i<<endl; //вывели распределение
 
-	cout << "\nпрактический коэффициент сжатия: " << estimate_compression(bytes.size(), encoded_bytes.size() + codes_table.size()) << endl;
+	//cout << "\nпрактический коэффициент сжатия: " << estimate_compression(bytes.size(), encoded_bytes.size() + codes_table.size()) << endl;
 
 	//проверка оптимальности кода
 	if (is_optimal(codes_table, proba)) cout << "\nКод является оптимальным." << endl;
@@ -183,9 +208,12 @@ int Compressor()//в компрессоре включить вызов с ко�
 		}
 	}
 	table_file.close();
-
+	// Кодирование данных
+	//vector<bool> encoded_bytes = encode(bytes, codes_table);
 	// Запись закодированных данных в бинарный файл
 	ofstream code_file("code.bin", ios::binary);
+	size_t bit_count = encoded_bytes.size();
+	code_file.write(reinterpret_cast<char*>(&bit_count), sizeof(bit_count)); // Запись количества значимых битов
 	for (size_t i = 0; i < encoded_bytes.size(); i += 8) {
 		char byte = 0;
 		for (size_t j = 0; j < 8 && i + j < encoded_bytes.size(); ++j) {
@@ -211,7 +239,8 @@ int Decompressor()
 		return -1;
 	}
 	int treeSize;
-	//f.read((char*)&treeSize, sizeof(treeSize));
+	//Считываются сжатые данные и преобразуются обратно в последовательность бит.
+	// Проход по этим битам для восстановления исходных символов с помощью дерева Хаффмана.
 	f.read(reinterpret_cast<char*>(&treeSize), sizeof(treeSize));
 	if (!f) {
 		cerr << "Ошибка чтения размера дерева" << endl;
@@ -274,6 +303,68 @@ int Decompressor()
 			n = tree.size() - 1;
 		}
 	}
+	// Чтение кодовой таблицы из файла table.bin
+	unordered_map<char, vector<bool>> codes_table;
+	ifstream table_file("table.bin", ios::binary);
+	if (!table_file) {
+		cerr << "Ошибка открытия файла table.bin" << endl;
+		return -1;
+	}
+
+	while (true) {
+		char ch;
+		table_file.get(ch);
+		if (table_file.eof()) break;
+		size_t size;
+		table_file.read(reinterpret_cast<char*>(&size), sizeof(size));
+		vector<bool> code(size);
+		for (size_t i = 0; i < size; ++i) {
+			char bit;
+			table_file.get(bit);
+			code[i] = bit;
+		}
+		codes_table[ch] = code;
+	}
+	table_file.close();
+
+	// Чтение закодированных данных из файла code.bin
+	vector<bool> encoded_bits;
+	ifstream code_file("code.bin", ios::binary);
+	if (!code_file) {
+		cerr << "Ошибка открытия файла code.bin" << endl;
+		return -1;
+	}
+
+	size_t bit_count;
+	code_file.read(reinterpret_cast<char*>(&bit_count), sizeof(bit_count)); // Чтение количества значимых битов
+
+	while (true) {
+		char byte;
+		code_file.get(byte);
+		if (code_file.eof()) break;
+		for (int i = 7; i >= 0; --i) {
+			encoded_bits.push_back((byte >> i) & 1);
+		}
+	}
+	code_file.close();
+
+	// Удаление лишних битов
+	if (encoded_bits.size() > bit_count) {
+		encoded_bits.resize(bit_count);
+	}
+
+	// Декодирование данных
+	vector<char> decoded_data = decode(encoded_bits, codes_table);
+	// Запись декодированных данных в файл output.txt
+	ofstream output_file("output.txt", ios::binary);
+	if (!output_file) {
+		cerr << "Ошибка создания выходного файла" << endl;
+		return -1;
+	}
+
+	for (char ch : decoded_data) {
+		output_file.put(ch);
+	}
 	outputFile.close();
 	if (!outputFile)
 	{
@@ -282,7 +373,7 @@ int Decompressor()
 	}
 
 	// Оценка теоретического коэффициента сжатия
-	ifstream originalFile("Alices Adventures in Wonderland.txt", ios::binary);
+	/*ifstream originalFile("Alices Adventures in Wonderland.txt", ios::binary);
 	if (!originalFile) {
 		cerr << "Ошибка открытия исходного файла для оценки сжатия" << endl;
 		return -1;
@@ -292,8 +383,7 @@ int Decompressor()
 
 	unordered_map<char, float> proba = estimate_proba(originalBytes);
 	unordered_map<char, vector<bool>> table = build_code(proba);
-	float theoretical_compression = estimate_compression(table, proba);
-	cout << "\nТеоретический коэффициент сжатия: " << theoretical_compression << endl;
+	*/
 	cout << "\nРазархивация файла выполнена" << endl;
 	return 1;
 }
